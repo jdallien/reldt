@@ -1,0 +1,363 @@
+/*  RelDT - A Relational Dual Tableaux Automated Theorem Prover
+    version 0.1 (July 7, 2005)
+  
+    written by Jeff Dallien (jdallien@stfx.ca)
+    RelDT Website: http://logic.stfx.ca/reldt/  
+ 
+    RelDT is written in XSB: http://xsb.sourceforge.net/ 
+
+    Prover style is based on tableaux theorem prover in "First Order Logic
+    and Automated Theorem Proving" 2nd Ed., Melvin Fitting, Springer, 1996   
+
+    Based on the work of Wendy MacCaull (wmaccaul@stfx.ca).
+
+    See the 'Extending RelDT' section of the manual or readme.txt for
+    details on how the theorem prover works and how to add new rules
+    or axiomatic sequences.
+
+
+    RelDT is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation; either version 2 of the License, or
+    (at your option) any later version.
+
+    RelDT is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with RelDT; if not, write to the Free Software
+    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+*/
+
+/* XSB tabling options */
+:- useSymmetryOfR, enable_tabling. % only table is symmetry rule is enabled.
+
+enable_tabling :-  table singlestep/2, singlestepextra/8, singlestepfinal/2, 
+   expand_and_close/4, components/9, components/6, components/3, component/2,
+   member/2, append/3, remove/3.
+
+/*  import common list operations from XSB basics library */
+:- import member/2 from basics.
+:- import append/3 from basics.
+
+/* Display opening message */
+:- nl,nl, write('RelDT version 0.1'),nl,write('July 6, 2005'),nl.
+:- write('http://logic.stfx.ca/reldt/').
+
+/****************************************************************************
+ Options (use: true, don't use: fail) 
+ To enable an option, change the fail to true, like this:
+	useOption :- true.
+ Similarly, to disable an option change true to back to fail.
+
+ Both options are disabled by default.
+****************************************************************************/
+
+useReflexivityOfR :- fail.   /* adds reflexivity close condition for r relation */
+useSymmetryOfR :- fail.      /* adds symmetry rule for r relation */
+
+/****************************************************************************
+ Defined Operators
+
+ XSB will ignore these keywords to allow them to be used by the theorem
+ prover.
+****************************************************************************/
+
+:- op(130, fy, [-]).      % complement
+:- op(140, fy, [conv]).   % converse
+:- op(200, xfy, [comp]).  % composition
+:- op(210, xfy, [inter]). % intersection
+:- op(220, xfy, [uni]).   % union
+
+/****************************************************************************
+ Formula Recognition
+ The predicates in the following section are used to recognize what type of
+ formula is currently being considered so the correct rule can be applied.
+****************************************************************************/
+
+% recognize unary rules
+unary(rel(- - _, _, _)).
+unary(rel(conv _, _, _)).
+
+symmetry(rel(r, _, _)) :- (useSymmetryOfR -> true).
+
+% recognize conjunctive rules 
+conjunctive(rel(_ inter _, _, _)).
+conjunctive(rel(- ( _ uni _ ), _,_)).
+conjunctiveextra(rel(_ comp _, _, _)).
+ 
+% recognize disjunctive rules 
+disjunctive(rel(_ uni _, _, _)).
+disjunctive(rel(- (_ inter _), _, _)).
+disjunctiveextra(rel(- (_ comp _), _, _)).
+
+/****************************************************************************
+  Formula Components
+  The predicates in the following section return the components of the
+  input formula after some rule has been applied.
+****************************************************************************/
+  
+% component(X, Y) :- Y is the component of the unary formula X
+component(rel(- - P, X, Y), rel(P, X, Y)).
+component(rel(conv R, X, Y), rel(R, Y, X)).
+symmetrycomponent(rel(r, X, Y), rel(r, Y, X)).
+
+% components for simple binary rules
+components(rel(P inter Q, X, Y), rel(P,X,Y), rel(Q, X, Y)).
+components(rel(- (P uni Q), X, Y), rel(- P, X, Y), rel(- Q, X, Y)).
+components(rel(P uni Q, X, Y), rel(P, X, Y), rel(Q, X, Y)).
+components(rel(- (P inter Q), X, Y), rel(- P, X, Y), rel(- Q, X, Y)).
+
+% components for composition, choose new but existing variable to apply 
+components(rel(P comp Q, X, Y), NewPartOne, NewPartTwo, VarFormList, Available, NewList) :- 
+    % if unsed var available then use it
+    Formula = rel(P comp Q, X, Y),
+    findnewvar(Available, VarFormList, Formula, NewVar),
+	addUsedVar(VarFormList, Formula, NewVar, NewList), % store new var as used 
+	NewPartOne = [rel(P, X, NewVar), rel(P comp Q, X, Y)],
+    	NewPartTwo = [rel(Q, NewVar, Y), rel(P comp Q, X, Y)].
+
+% components for complement of composition, choose brand new variable to apply 
+components(rel(- (P comp Q), X, Y), NewPartOne, NewPartTwo, VarFormList, Available, Possible, NewList, NewAvailable, NewPossible) :- 
+    % if unsed var available then use it
+    Formula = rel(- (P comp Q), X, Y),
+    findnewvar(Possible, VarFormList, Formula, NewVar), 
+	addUsedVar(VarFormList, Formula, NewVar, NewList), % store new var as used 
+	NewAvailable = [NewVar|Available],
+	% add new var to available 
+ 	remove(NewVar, Possible, NewPossible), % remove new var from list of possible new vars 
+	NewPartOne = rel(- (P), X, NewVar),
+    	NewPartTwo = rel(- (Q), NewVar, Y).
+
+
+/****************************************************************************
+  singlestep - apply a single step of the tableaux rules
+****************************************************************************/
+    
+/* single tableau step for basic rules, returns components */
+ singlestep([Conjunction | Rest], New) :-
+  member(Formula, Conjunction),
+  unary(Formula),
+  component(Formula, Newformula),
+  remove(Formula, Conjunction, Temporary),
+  Newconjunction = [Newformula | Temporary],
+  New = [Newconjunction | Rest].
+
+singlestep([Conjunction | Rest], New) :-
+  member(Alpha, Conjunction),
+  conjunctive(Alpha),
+  components(Alpha, Alphaone, Alphatwo),
+  remove(Alpha, Conjunction, Temporary),
+  Newconone = [Alphaone | Temporary],  % components placed on new branches
+  Newcontwo = [Alphatwo | Temporary],
+  New = [Newconone, Newcontwo | Rest].
+
+singlestep([Conjunction | Rest], New) :-
+  member(Beta, Conjunction),
+  disjunctive(Beta),
+  components(Beta, Betaone, Betatwo),
+  remove(Beta, Conjunction, Temporary), 
+  Newcon = [Betaone, Betatwo | Temporary], % components placed on same branch
+  New = [Newcon | Rest].
+
+% single tableau step for composition rules, requires variable lookup 
+singlestepextra([Conjunction | Rest], New, VarFormList, Available, Possible, NewVarFormList, NewAvailable, NewPossible) :-
+  member(Alpha, Conjunction),
+  conjunctiveextra(Alpha),
+  components(Alpha, Alphaone, Alphatwo, VarFormList, Available, NewVarFormList),
+  remove(Alpha, Conjunction, Temporary),
+  append(Alphaone, Temporary, Newconone),
+  append(Alphatwo, Temporary, Newcontwo),
+  New = [Newconone, Newcontwo | Rest],
+  NewAvailable = Available,
+  NewPossible = Possible.
+  
+singlestepextra([Conjunction | Rest], New, VarFormList, Available, Possible, NewVarFormList, NewAvailable, NewPossible) :-
+  member(Beta, Conjunction),
+  disjunctiveextra(Beta),
+  components(Beta, Betaone, Betatwo, VarFormList, Available, Possible, NewVarFormList, NewAvailable, NewPossible),
+  remove(Beta, Conjunction, Temporary),
+  Newcon = [Betaone, Betatwo | Temporary],
+  New = [Newcon | Rest].
+
+% perform symmetry rule last, only if no other rules will apply first
+singlestepfinal([Conjunction | Rest], New) :-
+  member(Formula, Conjunction),
+  symmetry(Formula),
+  symmetrycomponent(Formula, Newformula),
+  remove(Formula, Conjunction, Temporary),
+  Newconjunction = [Newformula | Temporary],
+  New = [Newconjunction | Rest].
+
+singlestep([Conjunction|Rest], [Conjunction|Newrest]) :-
+  singlestep(Rest, Newrest).  
+  
+ 
+/****************************************************************************
+ Tests for closure
+
+ Recognize axiomatic sequences for branch closure.
+****************************************************************************/
+
+/* 1xy axiomatic sequence */
+closed(Branch) :-    
+   member(rel(one,_,_), Branch).
+
+/* 1'xy axiomatic sequence */
+closed(Branch) :-
+   member(rel(onep,X,X), Branch).
+
+/* Fxy,-Fxy axiomatic sequence */
+closed(Branch) :-
+   member(rel(P, X, Y), Branch),
+   member(rel(- P, X, Y), Branch).
+
+/* Reflexivity of R closure condition (optional) */
+closed(Branch) :-
+   (useReflexivityOfR ->
+	member(rel(r, X, X), Branch)).
+
+closed([]). 
+
+/**************************************************************************** 
+  expand_and_close:  Newtableau is the result of applying
+  singlestep as many times as possible, starting
+  with Tableau.
+    
+  Attempt to use simple rules first with singlestep, if this fails,
+  attempt more complex rules singlestepextra.
+ 
+  expand_and_close is split into two predicates to avoid unnesscessary 
+  backtracking caused by tabling. Tabling expand_and_close but not 
+  expand_and_close2 prevents infinite applications of symmetry rule, but 
+  causes no backtracking when tableau list is empty and processing should
+  finish.
+****************************************************************************/
+
+expand_and_close(Tableau, VarFormList, Available, Possible) :-
+	expand_and_close2(Tableau, VarFormList, Available, Possible).
+
+expand_and_close2([], _, _, _) :- !.
+
+expand_and_close2([Branch | Rest], VarFormList, Available, Possible) :-
+   closed(Branch), !,
+   expand_and_close(Rest, VarFormList, Available, Possible).
+   
+expand_and_close2(Tableau, VarFormList, Available, Possible) :-
+   singlestep(Tableau, Newtableau), 
+   write(Newtableau), nl, !,
+   expand_and_close(Newtableau, VarFormList, Available, Possible).
+
+expand_and_close2(Tableau, VarFormList, Available, Possible) :-
+   singlestepextra(Tableau, Newtableau, VarFormList, Available, Possible, NewVarFormList, NewAvailable, NewPossible), 
+   write(Newtableau), nl, !,
+   expand_and_close(Newtableau, NewVarFormList, NewAvailable, NewPossible).
+
+expand_and_close2(Tableau, VarFormList, Available, Possible) :-
+   singlestepfinal(Tableau, Newtableau), 
+   write(Newtableau), nl, !, 
+   expand_and_close(Newtableau, VarFormList, Available, Possible).
+
+
+
+/****************************************************************************
+ reldt/1:
+ Initializes variable tracking lists then takes initial formula given 
+ as the parameter and begins building the tableau by calling expand_and_close.
+ Displays result message depending on whether the tableau closes or not. 
+****************************************************************************/
+   
+% test a formula for closure by applying the rules 
+reldt(rel(R, X, Y)) :-
+ getpossible(TempPossible),     % set up list of possbile (not yet existing) variables
+ getformlist(VarFormList),  % set up list of variables used for each formula
+ Available = [X, Y],        % set up list of available (existing) variables
+ remove(X, TempPossible, TempPossible2),  % remove initial variables from Possible list
+ remove(Y, TempPossible2, Possible),
+(expand_and_close([[rel(R, X, Y)]], VarFormList, Available, Possible)
+    -> yes; no),
+ abolish_all_tables.        % remove tables so that tableau is shown even if
+			    % an input formula is repeated in one session.
+   
+yes :- write('Relational theorem'), nl.
+no :- write('Not a relational theorem'), nl.
+
+/****************************************************************************
+ Variable adding/tracking predicates 
+
+ The Possible list of variables are those that can be introduced when a "new"
+ variable is needed, such as with the - comp rule. The Available list tracks 
+ which variables have been used and can be inserted when an "existing" 
+ variable is needed. The VarFormList tracks which existing variables have
+ been used with each subformula, as each variable can be applied to each
+ subformula that requires one.
+****************************************************************************/
+getpossible([a,b,c,d,e,f,g,h,i,j]).   % possible new variable names to introduce
+getformlist([]).
+   
+% find a variable in the Available or Possible list that has not yet
+% been applied with the given formula. Used by composition rules.
+findnewvar([Variable|Tail], VarFormList, Formula, FirstNewVar) :-
+	(isNewVar(VarFormList, Formula, Variable) -> 
+	    FirstNewVar = Variable;
+	    findnewvar(Tail, VarFormList, Formula, FirstNewVar)).
+
+isNewVar(FormList, Formula, _) :-
+	\+ member([Formula,_], FormList).
+	
+isNewVar(FormList, Formula, Variable) :-
+	member([Formula,VarList], FormList),
+	\+ member(Variable, VarList).
+
+% record a rule's use of a variable with a formulain the variable 
+% tracking lists
+addUsedVar(FormList, Formula, Variable, NewList) :-
+	\+ member([Formula,_], FormList),
+	addUsedVar([[Formula,[]] | FormList], Formula, Variable, NewList).
+	
+addUsedVar(FormList, Formula, Variable, NewList) :- 
+	member([Formula,VarList], FormList),
+	replace([Formula,VarList], [Formula,[Variable|VarList]], FormList, NewList).
+
+
+/****************************************************************************
+ Misc predicates, basic list functions
+
+ Some normal list operations are imported from XSB basics library:
+ member, append
+****************************************************************************/
+
+/* remove(Item, List, Newlist) :- 
+   Newlist is the result of removing all occurrences of
+   Item from List.
+
+   remove is split into 2 predicates, remove and remove2 to avoid 
+   incorrect results when tabling is used.
+*/
+
+remove(Item, List, NewList) :-
+        remove2(Item, List, [], NewList), !.
+
+remove2(_, [], TempList, NewList) :-
+        NewList = TempList.
+
+remove2(Item, [Item | Tail], TempList, NewList) :-
+        remove2(Item, Tail, TempList, NewList).
+
+remove2(Item, [Head | Tail], TempList, NewList) :-
+        append(TempList, [Head], NewTempList),
+        remove2(Item, Tail, NewTempList, NewList).
+
+
+
+/* Replace an item in a list with another */ 
+replace(_,_,[],[]).
+replace(HReplacant1,HReplacer,[HReplacant2|Tail],[HReplacer|NewTail]):-
+	HReplacant1 == HReplacant2,
+ 	replace(HReplacant1,HReplacer,Tail,NewTail).
+replace(HReplacant,HReplacer,[Head|Tail],[Head|NewTail]):-
+ 	replace(HReplacant,HReplacer,Tail,NewTail).
+	
+

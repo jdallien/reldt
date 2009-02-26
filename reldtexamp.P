@@ -1,0 +1,26 @@
+/* RelDT: Relational Dual Tableaux Theorem Prover Examples
+   Last Updated: July 07, 2005
+
+  Where indicated with *, examples can be found in:
+  Wendy MacCaull and Bruce Spencer, "ReVAT - Relational Validator 
+  by Analytic Tableaux" available on the RelDT website: 
+  http://logic.stfx.ca/reldt/
+*/
+
+
+% 1-4 are simple relational theorems
+ex(1) :- reldt(rel(one, x, x)).
+ex(2) :- reldt(rel(one inter one, x, y)).
+ex(3) :- reldt(rel(one uni one, x, y)).
+ex(4) :- reldt(rel(one comp one, a, b)).
+
+% * from bottom of p.4 and is a relational theorem
+ex(5) :- reldt(rel(-(r inter s) uni (s inter r), x, y)).
+
+% * from top of p.5 and is not a relational theorem
+ex(6) :- reldt(rel(-(r uni s) uni (r inter s), x, y)).
+
+% * from p.5 and is a relational theroem
+% uses symmetry of r, enabled using useSymmetryOfR option in RelDT file
+ex(7) :- reldt(rel(-r uni (r inter conv r), x, y)). 
+
