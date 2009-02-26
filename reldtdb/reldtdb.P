@@ -1,8 +1,7 @@
 /* RelDT-DB - A Database Relational Automated Theorem Prover
-   version 0.1 (July 21, 2005)
 
-   written by Jeff Dallien (jdallien@stfx.ca)
-   RelDT Website: http://logic.stfx.ca/reldt/
+   written by Jeff Dallien (jeff@dallien.net)
+   RelDT Website: http://logic.stfx.ca/reldt.html
 
    RelDT is written in XSB: http://xsb.sourceforge.net/
   
@@ -11,10 +10,9 @@
    
    Based on the work of Wendy MacCaull and Ewa Orlowska.
 
-   See the 'Extending RelDT-DB' section of the manual or readme.txt for
+   See the 'Extending RelDT-DB' section of the manual or README for
    details on how the theorem prover works and how to add new rules
    or axiomatic sequences.
-
   
    RelDT-DB is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -560,6 +558,7 @@ subtractTypes([], _, NewType, NewType2) :- NewType2 = NewType.
 breakType(Type, AddedTypesList, TypeList, TypeCount, Possible, NewTypeList, NewTypeCount, NewPossible) :-
 	member([Type, Attrib], TypeList),
 	breakAttribList(Attrib, [], AddedTypesList, TypeList, TypeCount, Possible, NewTypeList, NewTypeCount, NewPossible).
+
 
 breakAttribList([], TempList, ListOfNewTypes, TypeList, TypeCount, Possible, FinalTypeList, FinalTypeCount, FinalPossible) :-
 	reverse(TempList, ListOfNewTypes),
