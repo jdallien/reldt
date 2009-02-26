@@ -26,7 +26,7 @@ information. Thank you.
 2. Getting RelDT
 ----------------
 
-RelDT can be downloaded from the RelDT website: http://logic.stfx.ca/reldt/
+RelDT can be downloaded from the RelDT website: http://logic.stfx.ca/reldt.html
 
 XSB is required to use RelDT. The XSB installation files and instructions 
 can be found on the XSB website: http://xsb.sourceforge.net/
@@ -39,8 +39,8 @@ After downloading the zip file containing the theorem prover files,
 extract the files into the desired location. There are four files:
 	reldt.P   	XSB code for the RelDT Theorem prover
 	reldtexamp.P	XSB code for some RelDT examples
-	readme.txt	This file.
-	gpl.txt		Text of GNU General Public License (GPL)
+	README	        This file.
+	COPYING		Text of GNU General Public License (GPL)
 
 Start XSB, then consult the RelDT source file, and the examples if desired: 
 
@@ -171,8 +171,8 @@ branch. This axiomatic sequence is the first closed predicate in RelDT.
 --------------------------------
 
 Papers containing details of the rules used by RelDT can be downloaded from 
-the RelDT website, http://logic.stfx.ca/reldt/.
+the RelDT website, http://logic.stfx.ca/reldt.html
 Please check for up to date contact information on the website.
 
-RelDT was written by Jeff Dallien (jdallien@stfx.ca) and is based on work by 
+RelDT was written by Jeff Dallien (jeff@dallien.net) and is based on work by 
 Wendy MacCaull (wmaccaul@stfx.ca). See the website for more details.
