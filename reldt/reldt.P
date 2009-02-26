@@ -1,8 +1,7 @@
 /*  RelDT - A Relational Dual Tableaux Automated Theorem Prover
-    version 0.1 (July 7, 2005)
   
-    written by Jeff Dallien (jdallien@stfx.ca)
-    RelDT Website: http://logic.stfx.ca/reldt/  
+    written by Jeff Dallien (jeff@dallien.net)
+    RelDT Website: http://logic.stfx.ca/reldt.html  
  
     RelDT is written in XSB: http://xsb.sourceforge.net/ 
 
@@ -14,7 +13,6 @@
     See the 'Extending RelDT' section of the manual or readme.txt for
     details on how the theorem prover works and how to add new rules
     or axiomatic sequences.
-
 
     RelDT is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
