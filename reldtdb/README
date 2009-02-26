@@ -1,0 +1,190 @@
+RelDT-DB v0.1 (July 21, 2005)
+Database Relational Dual Tableaux Automated Theorem Prover
+http://logic.stfx.ca/reldt.html
+
+Contents:
+1. Introduction
+2. Getting RelDT-DB
+3. Starting RelDT-DB
+4. Testing a formula
+5. Theorem prover output
+6. RelDT-DB options
+7. Extending RelDT-DB
+8. More information / Contact Us
+
+---------------
+1. Introduction
+---------------
+
+RelDT-DB is a typed, relational dual tableaux automated theorem 
+prover written in XSB. 
+
+RelDT-DB is under development! If you find a theorem that does not 
+produce a correct proof, please contact us. Visit our website for up 
+to date contact information. Thank you.
+
+-------------------
+2. Getting RelDT-DB
+-------------------
+
+RelDT-DB can be downloaded from the RelDT website: 
+http://logic.stfx.ca/reldt.html
+
+XSB is required to use RelDT and RelDT-DB. The XSB installation files 
+and instructions can be found on the XSB website: http://xsb.sourceforge.net/
+
+--------------------
+3. Starting RelDT-DB
+--------------------
+
+After downloading the zip file containing the theorem prover files, 
+extract the files into the desired location. There are four files:
+	reldtdb.P   	XSB code for the RelDT-DB Theorem prover
+	reldtdbexamp.P	XSB code for some RelDT-DB examples
+	readme.txt	This file.
+	gpl.txt		Text of GNU General Public License (GPL)
+
+Start XSB, then consult the RelDT-DB source file, and the examples if 
+desired: 
+
+Type xsb to start XSB. The complete path may need to be used if the xsb 
+executable is not in your PATH. Type [reldtdb]. to load the RelDT-DB source 
+file. A short message displaying the version of RelDT-DB and the website 
+will be displayed. Type [reldtdbexamp]. to load the RelDT-DB examples.
+
+---------------------
+4. Testing a formula
+---------------------
+
+This section explains how to test your own formulas with the theorem 
+prover. The included example file, reldtdbexamp.P is useful for seeing how 
+this is done.
+
+When testing a formula, it first must be translated into the required 
+syntax for the theorem prover. Due to the restrictive nature of text based 
+input, symbols have been replaced with short keywords. See the table below. 
+Prolog terms beginning with a captial letter are used as Prolog variables, 
+so for input to the theorem prover, all relation and variable names are 
+entered in lower case to avoid conflicts. 
+
+Types are defined using the addTypeByParts/6 predicate. Variables are
+associated with a variable in the following manner:
+	var(name, type)
+
+Because formulas can have a list of variables associated with them, 
+variables are always entered in a list, even if there is only one. 
+
+The relation R(x) where x is of type a is represented in RelDT-DB as:
+	rel(R, [var(x, a)])
+
+The addAvailable/4 predicate is used to tell the prover which variables
+of each type are used in the input formula. This predicate takes in an
+existing Available list and returns an updated one to pass into reldtdb/5.
+
+Operation or 
+Constant         RelDT-DB Keyword
+---------------------------------
+ union              uni
+ intersection       inter
+ complement         -
+ product	    prod
+ projection 	    proj(typeA, typeB, relation)
+ arrow		    ->
+ 1     		    one
+ 1 (empty type)     oneempty
+ 0 		    zero
+   
+
+The theorem prover is started using the reldtdb/5 predicate with the 
+formula to test, the number of types defined, the list of types defined,
+the list of possible and available variables for each type. RelDT-DB 
+provides predicates for setting up each of these lists. See the example 
+file.
+
+------------------------
+5. Theorem prover output
+------------------------
+
+The tableau is contained in a Prolog list, contained in square brackets. 
+Each branch of the tableau is a list inside the main tableau list. After a 
+rule is applied, the theorem prover displays the new contents of the tableau 
+list. If a branch is found to be closed, it is removed from the tableau 
+list. Because the lists are always displayed at the left side of the screen, 
+branches may not correspond to the branch displayed directly above it, if a 
+branch was removed.
+
+If all the branches are found to close, the theorem prover will output the 
+message: "Database Relational theorem". If a point is reached where no 
+rules can be applied but any open branch remains, the theorem prover will 
+output the message: "Not a database relational theorem".
+
+-------------------
+6. RelDT-DB Options
+-------------------
+
+RelDT-DB has one option which can be enabled or disabled depending on 
+the desired behaviour: 
+
+Variables in the initial Available list: Instead of an empty Available 
+list of variables, each type will be created with one variable in its
+Available list.
+
+To change this option, edit the RelDT-DB source file and find the 
+useInitialAvailable option near the top. Setting an option to `fail` 
+disables it, setting it to 'true' enables it. The option is disabled 
+by default.
+
+---------------------
+7. Extending RelDT-DB
+---------------------
+
+RelDT-DB can be extended with new rules or axiomatic sequences. In 
+general, the steps for adding a new rule are:
+
+Write a predicate to recognize what type of formula to which the rule 
+applies. This is like the unary, conjunctive and disjunctive predicates 
+RelDT-DB contains. If the new rule fits an existing type then another one 
+of these predicates can be added to the existing ones. If a new type of rule 
+is needed, a new predicate with a new name should be added to recognize it. 
+
+The format of the recognizing predicates are:
+	type(formula pattern) :- extra conditions. 
+
+Use the anonymous variable _ to indicate parts of the formula where relations 
+with unknown names will be located in the formula. The theorem prover tries 
+to match each formula it is testing with the recognizing predicates. The 
+extra conditions are optional. 
+
+If an existing rule type is used, the existing singlestep or singlestepextra 
+predicates will recognize and apply the rule appropriately. If a new rule 
+type is added, a new singlestep or singlestepextra predicate will need to be 
+added which places the components of the formula in the appropriate spots in 
+the tableau list. Singlestep predicates require only the formula and tableau 
+data to apply the rule. singlestepexta predicates require additional 
+information to be passed in, such as variable tracking lists.
+
+The singlestep and singlestepextra predicates use the components predicates 
+to retrieve what new formulas will be added to the tableau as a result of the 
+rule. Components predicates take in the formula that appears on the top of 
+the rule as a parameter and return the one or more formulas that appear 
+below the line of the rule. A component predicate will need to be added for 
+each new rule being added.
+
+To add new axiomatic sequences, additional closed predicates are used. A 
+closed predicate takes in a branch of the tableau as a parameter and tests 
+to see if it contains an axiomatic sequence. The branch is a Prolog list, so 
+the member/2 predicate can be used to find the sequence anywhere in the 
+branch, if that is how it is to be used. For example, in standard RelDT-DB,
+the appearance of rel(one, _) anywhere in a branch is enough to close that 
+branch. 
+
+--------------------------------
+8. More Information / Contact Us
+--------------------------------
+
+Papers containing details of the rules used by RelDT and RelDT-DB can be 
+downloaded from the RelDT website, http://logic.stfx.ca/reldt.html
+Please check for up to date contact information on the website.
+
+RelDT and RelDT-DB were written by Jeff Dallien (jeff@dallien.net).
+See the website for more details.

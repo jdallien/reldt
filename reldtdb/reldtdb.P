@@ -1,0 +1,732 @@
+/* RelDT-DB - A Database Relational Automated Theorem Prover
+   version 0.1 (July 21, 2005)
+
+   written by Jeff Dallien (jdallien@stfx.ca)
+   RelDT Website: http://logic.stfx.ca/reldt/
+
+   RelDT is written in XSB: http://xsb.sourceforge.net/
+  
+   Prover style is based on tableaux theorem prover in "First Order Logic
+   and Automated Theorem Proving" 2nd Ed., Melvin Fitting, Springer, 1996
+   
+   Based on the work of Wendy MacCaull and Ewa Orlowska.
+
+   See the 'Extending RelDT-DB' section of the manual or readme.txt for
+   details on how the theorem prover works and how to add new rules
+   or axiomatic sequences.
+
+  
+   RelDT-DB is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 2 of the License, or
+   (at your option) any later version.
+
+   RelDT-DB is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with RelDT-DB; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+*/
+
+/* XSB tabling options */
+:-  table singlestep/2, singlestepextra/10, singlestepextra/12, 
+    singlestepfinal/2, singlestepextrafinal/10, expand_and_close/6, 
+    componentsfinal/12, components/13, components/3, component/2, 
+    component/10, componente1/2, componentpermute/2, member/2, append/3, 
+    remove/3.
+
+/*  import common list operations from XSB basics library */
+:- import length/2, member/2, append/3, reverse/2 from basics.
+:- import storage_find_keypair/3, storage_insert_keypair_bt/4,
+          storage_delete_keypair_bt/3 from storage.
+
+/* Display opening message */
+:- nl,nl, write('RelDT-DB version 0.1 (XSB)'),nl,write('July 21, 2005'),nl.
+:- write('http://logic.stfx.ca/reldt/'),nl.
+
+/****************************************************************************
+ Options (use: true, don't use: fail)
+ To enable an option, change the fail to true, like this:
+        useOption :- true.
+ Similarly, to disable an option change true to back to fail.
+
+ Options are disabled by default.
+****************************************************************************/
+
+useInitialAvailable :- fail.  /* begin with a populated Available variable list */
+
+/***************************************************************************** 
+ Defined Operators
+
+ Also used is proj(Type1, Type2, Relation) for projection, but is not a
+ defined operator.
+
+ Arrow substitution: F->G is -F(u), G(u)
+*****************************************************************************/
+
+:- op(130, fy,  [-]). 		% complement
+:- op(210, xfy, [inter]). 	% intersection
+:- op(220, xfy, [uni]). 	% union
+:- op(230, xfy, [prod]).	% product
+:- op(240, xfy, [->]).		% arrow
+
+/****************************************************************************
+ Formula Recognition
+ The predicates in the following section are used to recognize what type of
+ formula is currently being considered so the correct rule can be applied.
+
+ Some formulas that have rules that are applied in the same manner may be
+ recognized differently to create the correct order of applying the rules.
+ Rules that always succeed, such as the permutation rule, need to be 
+ applied last so other applicable rules can be applied first.
+****************************************************************************/
+
+% Recognize unary rules 
+unary(rel(- - _, _)).
+
+% Recognize conjunctive rules 
+conjunctive(rel(_ inter _, _)).
+conjunctive(rel(_ prod _, VarList)) :- length(VarList, Len), Len @> 1.
+conjunctive(rel(- (_ uni _), _)).
+
+% Recognize disjunctive rules 
+disjunctive(rel(_ -> _, _)).	 	% arrow substitution first
+disjunctive(rel(- (_ inter _), _)).
+disjunctive(rel(_ uni _, _)).
+disjunctive(rel(- (_ prod _), VarList)) :- length(VarList, Len), Len @> 1.
+disjunctiveextras(rel(proj(_,_,_), _)).
+disjunctiveextra(rel(- (proj(_,_,_)), _)).
+
+% specific rules 
+specifice1(rel(_, VarList)) :- member(var(e,0), VarList).
+specific(rel(oneempty prod  _, _)).
+specific(rel(- (oneempty prod _), _)).
+
+permute(rel(_, VarList)) :- length(VarList, Len), Len @> 1.
+
+% disjoint union rule after all other possible rules
+final(rel(_, X), TypeList) :- 
+	head(X, var(_,Type)),
+	member([Type, Attribs], TypeList),
+	length(Attribs, Len), Len @>1.
+
+
+/***************************************************************************** 
+  Formula Components
+  The predicates in the following section return the components of the 
+  input formula after some rule has been applied. Simple rules require  
+  only the input formula to determine the components of the formula. 
+  More complex rules need to be passed lists of variables to perform 
+  rules involving types. 
+*****************************************************************************/
+
+% Components of unary formulas 
+component(rel(- - P, X), rel(P, X)).
+
+% components for simple binary rules 
+components(rel(P -> Q, X), rel(-P, X), rel(Q, X)). % arrow substitution
+components(rel(P inter Q, X), rel(P, X), rel(Q, X)).
+components(rel(- (P inter Q), X), rel(- P, X), rel(- Q, X)).
+components(rel(P uni Q, X), rel(P, X), rel(Q, X)).
+components(rel(- (P uni Q), X), rel(P, X), rel(Q,X)).
+
+components(rel(P prod Q, [First | Second]), rel(P, [First]), rel(Q, Second)).
+components(rel(- (P prod Q), [First | Second]), rel(- P, [First]), rel(- Q, Second)).
+
+% components for specific rules e1, e2, e3
+
+componente1(rel(P, VarList), Comp1) :- 
+	remove(var(e,0), VarList, NewVarList), 
+	Comp1 = rel(P, NewVarList).
+
+component(rel(oneempty prod P, U), Comp1) :-
+	append([var(e,0)], U, NewVarList),
+	Comp1 = rel(one prod P, NewVarList).
+
+component(rel(- (oneempty prod P), U), Comp1) :-
+	append([var(e,0)], U, NewVarList),
+	Comp1 = rel(- (one prod P), NewVarList).
+
+% Components of binary formulas 
+
+/*
+ Component for (- proj) formula (only returns one).
+ 
+ The complement projection rule requires a new variable of type A-B be 
+ added to the branch. This component predicate determines what type A-B 
+ is, then finds the first variable from the Possible list of that new 
+ type to use.
+*/
+
+component(rel(- proj(A,B,F), U), TypeCount, TypeList, Possible, Available, OutTypeCount, OutTypeList, OutPossible, OutAvailable, Comp1) :-
+        subtract2Types(A, B, TypeCount, TypeList, Possible, NewTypeName, NewTypeCount, NewTypeList, NewPossible),
+        getFirstPossibleVar(NewTypeName, Available, NewPossible, NewAvailable, NewPossible2, Var),
+        useVarOfType(NewTypeName, Var, NewAvailable, NewPossible2, OutAvailable, OutPossible),
+        OutTypeList = NewTypeList,
+        OutTypeCount = NewTypeCount,
+        append(U, [var(Var, NewTypeName)], ListOfVars),
+        Comp1 = rel(- F, ListOfVars).
+
+/*
+ The projection rule requires an existing variable of type A-B be added 
+ to the branch. This components predicate determines what type A-B is, 
+ and then finds the first available variable of that new type to use.
+
+ In some cases it is necessary for a type to begin with a variable 
+ available, so the option useInitialAvailable is used here to determine
+ whether to start with an empty Available list for the A-B type.
+*/
+
+components(rel(proj(A,B,F), U), TypeCount, TypeList, Possible, Available, UsedFormulaVarList,  OutTypeList, OutTypeCount, OutPossible, OutAvailable, OutUsedFormulaVarList, Comp1, Comp2)  :-
+        subtract2Types(A, B, TypeCount, TypeList, Possible, NewTypeName, NewTypeList, NewTypeCount, OutPossible),
+
+	% option to provide initial population of available variables
+	populateInitialAvailable(NewTypeName, Available, NewAvailable),
+
+        getFirstAvailableVar(NewTypeName, rel(proj(A,B,F), U), NewAvailable, UsedFormulaVarList, VarName),
+        addUsedFormulaVar(rel(proj(A,B,F), U), NewTypeName, VarName, UsedFormulaVarList, OutUsedFormulaVarList),
+        OutTypeList = NewTypeList,
+        OutTypeCount = NewTypeCount,
+	OutAvailable = NewAvailable,
+        append(U, [var(VarName, NewTypeName)], ListOfVars),
+        Comp1 = rel(F, ListOfVars),
+        Comp2 = rel(proj(A,B,F), U).
+
+/*
+ The permutation rule allows for any permutation of the variables used 
+ in a formula. This version of RelDT-DB only supports permutations of 
+ lists of 2 variables. Rules for permuting a different number of 
+ variables can be written similarly. A general permuation rule is planned 
+ for a future version.
+*/
+componentpermute(rel(P, VarList), rel(P, NewVarList)) :-
+	length(VarList, 2),
+	permute2(VarList, NewVarList).
+
+permute2([X,Y], [Y,X]).
+
+
+/*
+ This rule breaks a type's attribute list into a number of new types, 
+ each containing only one attribute. The variable whose type has been 
+ "broken up" will be replaced with the same variable name and a list of 
+ the corresponding new types generated by this rule. The actual 
+ replacement is performed at the singlestep level.
+*/
+
+componentsfinal(rel(P, VarList), TypeCount, TypeList, Possible, Available, OutTypeCount, OutTypeList, OutPossible, OutAvailable, Comp1, ReplacedVar, ReplacedWith) :-
+	member(var(VarName, VarType), VarList), % get first var's Type
+	breakType(VarType, AddTypesList, TypeList, TypeCount, Possible, NewTypeList, NewTypeCount, NewPossible),
+	buildNewVarList(AddTypesList, NewTypeList, NewTypeCount, NewPossible, Available, [], NewVarList, OutPossible, OutAvailable),
+	OutTypeCount = NewTypeCount,
+	OutTypeList = NewTypeList, 
+	Comp1 = rel(P, NewVarList),
+	ReplacedVar = var(VarName, VarType),
+	ReplacedWith = NewVarList.
+
+
+/****************************************************************************
+  singlestep - apply a single step of the tableaux rules
+*****************************************************************************/
+
+% singlesteps for specific rules e1, e2, e3 
+singlestep([Conjunction | Rest], New) :-
+	member(Beta, Conjunction),
+ 	specific(Beta),
+	component(Beta, Betaone),
+	remove(Beta, Conjunction, Temporary),
+	Newcon = [Betaone | Temporary],
+	New = [Newcon | Rest].
+
+% single tableau step for basic rules, returns components
+singlestep([Conjunction | Rest], New) :-
+	member(Formula, Conjunction),
+	unary(Formula),
+	component(Formula, Newformula),
+	remove(Formula, Conjunction, Temporary),
+	Newconjunction = [Newformula | Temporary],
+	New = [Newconjunction | Rest].
+
+singlestep([Conjunction | Rest], New) :-
+	member(Alpha, Conjunction),
+	conjunctive(Alpha),
+	components(Alpha, Alphaone, Alphatwo),
+	remove(Alpha, Conjunction, Temporary),
+	Newconone = [Alphaone | Temporary],
+	Newcontwo = [Alphatwo | Temporary],
+	New = [Newconone, Newcontwo | Rest].
+
+singlestep([Conjunction | Rest], New) :-
+	member(Beta, Conjunction),
+	disjunctive(Beta),
+	components(Beta, Betaone, Betatwo),
+	remove(Beta, Conjunction, Temporary),
+	Newcon = [Betaone, Betatwo | Temporary],
+	New = [Newcon | Rest].
+
+singlestepextra([Conjunction | Rest], New, TypeCount, TypeList, Possible, Available, OutTypeCount, OutTypeList, OutPossible, OutAvailable) :-
+	member(Beta, Conjunction),
+  	disjunctiveextra(Beta),
+	component(Beta, TypeCount, TypeList, Possible, Available, OutTypeCount, OutTypeList, OutPossible, OutAvailable, Betaone),
+	remove(Beta, Conjunction, Temporary),
+	Newcon = [Betaone | Temporary],
+	New = [Newcon | Rest].
+
+singlestepextra([Conjunction | Rest], New, TypeCount, TypeList, Possible, Available, UsedFormulaVarList, OutTypeCount, OutTypeList, OutPossible, OutAvailable, OutUsedFormulaVarList) :-
+	member(Beta, Conjunction),
+	disjunctiveextras(Beta),
+	components(Beta, TypeCount, TypeList, Possible, Available, UsedFormulaVarList, OutTypeList, OutTypeCount, OutPossible, OutAvailable, OutUsedFormulaVarList, Betaone, Betatwo),
+	remove(Beta, Conjunction, Temporary),
+  	Newcon = [Betaone, Betatwo | Temporary],
+	New = [Newcon | Rest].
+
+singlestepextrafinal([Conjunction | Rest], New, TypeCount, TypeList, Possible, Available, OutTypeCount, OutTypeList, OutPossible, OutAvailable) :-
+	member(Beta, Conjunction),
+	final(Beta, TypeList),	
+	componentsfinal(Beta,  TypeCount, TypeList, Possible, Available, OutTypeCount, OutTypeList, OutPossible, OutAvailable, Betaone, ReplacedVar, ReplacedWith),
+	remove(Beta, Conjunction, Temporary),
+	% need to recurse through remaining branches of tableau and replace variables with broken disjoint types
+	replaceVar(Temporary, ReplacedVar, ReplacedWith, NewTemp),
+        Newcon = [Betaone | NewTemp],
+        New = [Newcon | Rest].
+
+singlesteppermute([Conjunction | Rest], New) :-
+	member(Beta, Conjunction),
+        permute(Beta),
+        componentpermute(Beta, Betaone),
+        remove(Beta, Conjunction, Temporary),
+        Newcon = [Betaone | Temporary],
+        New = [Newcon | Rest].
+
+% want this to be performed as the last possible step: 
+% if nothing else applies first, then this step is ok
+singlestepfinal([Conjunction | Rest], New) :-
+  	member(Beta, Conjunction),
+  	specifice1(Beta),
+  	componente1(Beta, Betaone),
+  	remove(Beta, Conjunction, Temporary),
+  	Newcon = [Betaone | Temporary],
+  	New = [Newcon | Rest].
+
+/****************************************************************************
+ Tests for closure
+
+ Recognize axiomatic sequences for branch closure.
+****************************************************************************/
+
+% Fx,-Fx axiomatic sequence 
+closed(Branch) :-
+   member(rel(P, X), Branch),
+   member(rel(- P, X), Branch).
+
+% 1(u) axiomatic sequence 
+closed(Branch) :-
+   member(rel(one, _), Branch).
+
+closed(Branch) :-
+   member(rel(oneempty, _), Branch).
+
+% -0(u) axiomatic sequence 
+closed(Branch) :-
+   member(rel(- zero, _), Branch).
+
+closed([]).
+
+/****************************************************************************
+  expand_and_close:  Newtableau is the result of applying
+  singlestep as many times as possible, starting
+  with Tableau.
+
+  Attempt to use simple rules first with singlestep, if this fails,
+  attempt more complex rules singlestepextra.
+
+  expand_and_close is split into two predicates to avoid unnesscessary
+  backtracking caused by tabling. Tabling expand_and_close but not
+  expand_and_close2 prevents infinite applications of symmetry rule, but
+  causes no backtracking when tableau list is empty and processing should
+  finish.
+
+  The permutation rule can always be applied if there is more than
+  one variable listed in a relation. Due to this, it cannot be applied 
+  before other rules because tabling will stop what would be an infinite 
+  loop, and the prover will stop with an incomplete proof. If the 
+  permutation rule is made to apply after other rules, it is possible that a 
+  list of variables will be broken apart by other rules before different 
+  permutations are attempted. As a solution, expand_and_close2 will try to 
+  continue applying rules without the permutation rule. If the tableau is 
+  found not to close, the execution will backtrack and then expand_and_close2 
+  will try a permutation of the variable list and then continue applying 
+  other rules. This way, if a rule is applied that breaks a variable list 
+  apart before the permutation rule can be applied, backtracking will ensure 
+  the permutation rule is attempted eventually if the tableau will not close 
+  without it.
+
+  To allow for attempts of possibly incorrect series of rule applications,
+  the tableau cannot be displayed directly on screen after each rule is used.
+  The tableau is stored using XSB storage key-value pairs via the 
+  addToTableau predicate. When the prover is finished, the entire tableau is
+  displayed at once.
+****************************************************************************/
+
+expand_and_close(Tableau, VarFormList, TypeCount, TypeList, Possible, Available) :-
+	expand_and_close2(Tableau, VarFormList, TypeCount, TypeList, Possible, Available).
+
+expand_and_close2([], _, _, _, _, _) :- !.
+
+expand_and_close2([Branch | Rest], VarFormList, TypeCount, TypeList, Possible, Available) :-
+	closed(Branch),
+	expand_and_close(Rest, VarFormList, TypeCount, TypeList, Possible, Available).
+
+expand_and_close2(Tableau, VarFormList, TypeCount, TypeList, Possible, Available) :-
+	singlestep(Tableau, Newtableau), !,
+	(expand_and_close(Newtableau, VarFormList, TypeCount, TypeList, Possible, Available) 
+	-> addToTableau(Newtableau) ;
+	singlesteppermute(Tableau, NewNewtableau), !,
+	expand_and_close(NewNewtableau, VarFormList, TypeCount, TypeList,Possible, Available),
+	addToTableau(NewNewtableau)).
+
+expand_and_close2(Tableau, VarFormList, TypeCount, TypeList, Possible, Available) :-
+	singlestepextra(Tableau, Newtableau, TypeCount, TypeList, Possible, Available, NewTypeCount, NewTypeList, NewPossible, NewAvailable), !,
+	(expand_and_close(Newtableau, VarFormList, NewTypeCount, NewTypeList, NewPossible, NewAvailable) 
+	-> addToTableau(Newtableau) ;
+	singlesteppermute(Tableau, NewNewtableau), !,
+	expand_and_close(NewNewtableau, VarFormList, TypeCount, TypeList,Possible, Available),
+	addToTableau(NewNewtableau)).
+
+expand_and_close2(Tableau, VarFormList, TypeCount, TypeList, Possible, Available) :-
+	singlestepextra(Tableau, Newtableau, TypeCount, TypeList, Possible, Available, VarFormList, NewTypeCount, NewTypeList, NewPossible, NewAvailable, NewVarFormList), !,
+	(expand_and_close(Newtableau, NewVarFormList, NewTypeCount, NewTypeList, NewPossible, NewAvailable) 
+	-> addToTableau(Newtableau) ;
+	singlesteppermute(Tableau, NewNewtableau), !,
+	expand_and_close(NewNewtableau, VarFormList, TypeCount, TypeList,Possible, Available),
+	addToTableau(NewNewtableau)).
+
+expand_and_close2(Tableau, VarFormList, TypeCount, TypeList, Possible, Available) :-
+	singlestepextrafinal(Tableau, Newtableau, TypeCount, TypeList, Possible, Available, NewTypeCount, NewTypeList, NewPossible, NewAvailable), !,
+	(expand_and_close(Newtableau, VarFormList, NewTypeCount, NewTypeList, NewPossible, NewAvailable) 
+	-> addToTableau(Newtableau) ;
+	singlesteppermute(Tableau, NewNewtableau), !,
+	expand_and_close(NewNewtableau, VarFormList, TypeCount, TypeList,Possible, Available),
+	addToTableau(NewNewtableau)).
+
+expand_and_close2(Tableau, VarFormList, TypeCount, TypeList, Possible, Available) :-
+	singlestepfinal(Tableau, Newtableau), !,
+	(expand_and_close(Newtableau, VarFormList, TypeCount, TypeList, Possible, Available) 
+	-> addToTableau(Newtableau) ;
+	singlesteppermute(Tableau, NewNewtableau), !,
+	expand_and_close(NewNewtableau, VarFormList, TypeCount, TypeList,Possible, Available),
+	addToTableau(NewNewtableau)).
+
+
+
+/****************************************************************************
+reldtdb/5:
+Parameters are: formula to test, number of types and list of type details, 
+Possible and Available variable tracking lists.
+
+Initializes the formula-variable tracking list, adds the empty type to 
+the list of types, and calls expand_and_close on the input formula. 
+Displays result message depending on whether the tableau closes or not.
+****************************************************************************/
+
+reldtdb(X, TypeCount, TypeList, Possible, Available) :-
+        emptyList(VarFormList),    % set up list of variables used for each formula
+	addTypeByParts(TypeList, empty, [], Possible, NewTypeList, NewPossible), % set up empty type 
+	NewTypeCount is TypeCount + 1,
+	storage_insert_keypair_bt(reldt, tableau, [], _),	
+	(expand_and_close([[X]], VarFormList, NewTypeCount, 
+		NewTypeList, NewPossible, Available) -> yes; no),
+	abolish_all_tables.   % remove tables so that tableau is shown even if
+                              % an input formula is repeated in one session.
+
+	
+
+/* display tableau and result message */
+
+yes :- 	storage_find_keypair(reldt, tableau, T),
+	printTableau(T),
+	storage_delete_keypair_bt(reldt, tableau, _),
+	nl, write('Database relational theorem'), nl.
+
+no :-	storage_find_keypair(reldt, tableau, T),
+	printTableau(T),
+	storage_delete_keypair_bt(reldt, tableau, _),
+	nl, write('Not a database relational theorem'), nl.
+
+
+/*****************************************************************************
+ Type Specific Operations
+
+ The predicates in the following section are operations involving types 
+ that are used to apply the RelDT-DB rules.
+
+ The Possible list of variables are those that can be introduced when a 
+ "new" variable is needed, such as with the - proj rule. The Available 
+ list tracks which variables have been used and can be inserted when an 
+ "existing" variable is needed. 
+
+ Available and Possible lists for tracking of variables used for
+ different types are formatted like this:
+ [[[type],[variables]], [[type],[variables]],..]
+
+ Each variable has a type name associated with it like this:
+ var(name, typename)
+
+ The list of type names and the attributes associated with each is
+ stored in TypeList, with TypeCount being the number of types in the
+ list. Generated type names are "type#" where # is the TypeCount
+ after the new type will be added. Add types to the TypeList using the
+ addTypeByParts/6 predicate. See the type specific predicate section 
+ below and the readme.txt for more information.
+*****************************************************************************/
+
+buildNewVarList([], _, _, Possible, Available, TempList, FinalNewVarList, FinalPossible, FinalAvailable) :-
+	FinalNewVarList = TempList,
+	FinalPossible = Possible,
+	FinalAvailable = Available.
+
+buildNewVarList([Head | Tail], TypeList, TypeCount, Possible, Available, TempList, FinalNewVarList, FinalPossible, FinalAvailable) :-
+	getFirstPossibleVar(Head, Available, Possible, NewAvailable, NewPossible, VarName), 
+	buildNewVarList(Tail, TypeList, TypeCount, NewPossible, NewAvailable, [var(VarName, Head) | TempList], FinalNewVarList, FinalPossible, FinalAvailable).
+
+
+% Will hold list of variables for each type 
+getTypeList([]).
+
+% possible new variable names to introduce
+getpossible([a,b,c,d,e,f,g,h,i,j]). 
+
+
+% Add a type to the list of types 
+addType(TypeList, Type, NewTypeList) :- NewTypeList = [TypeList, Type].
+
+
+addTypeByParts([], TypeName, AttribList, Possible, NewTypeList, NewPossible) :-
+        NewTypeList = [[TypeName, AttribList]],
+        addPossible(TypeName, Possible, NewPossible).
+
+addTypeByParts(TypeList, TypeName, AttribList, Possible, [NewType | TypeList], NewPossible) :-
+        NewType = [TypeName, AttribList],
+        addPossible(TypeName, Possible, NewPossible).
+
+addPossible(TypeName, [], NewPossible) :-
+        getpossible(TempPossible),
+        NewPossible = [[TypeName, TempPossible]].
+
+addPossible(TypeName, PossibleList, [NewPossible | PossibleList]) :-
+        getpossible(TempPossible),
+        NewPossible = [TypeName, TempPossible].
+
+/*
+ substract2Types: create a new type from the existing types A and B by
+ finding the type A-B. Recognizes if the "new type" has the same 
+ attribute list as an existing type name and returns that type name 
+ instead of generating a new type.
+*/
+
+subtract2Types(TypeA, TypeB, TypeCount, TypeList, Possible, NewTypeName, NewTypeCount, NewTypeList, NewPossible) :-
+        member([TypeA, AttribA], TypeList),
+        member([TypeB, AttribB], TypeList),
+        subtractTypes(AttribA, AttribB, [], NewTypeAttribs),
+        member([ExistingType, NewTypeAttribs], TypeList),
+        NewTypeName = ExistingType,
+        NewTypeCount = TypeCount,
+        NewTypeList = TypeList,
+        NewPossible = Possible.
+
+subtract2Types(TypeA, TypeB, TypeCount, TypeList, Possible, NewTypeName, NewTypeCount, NewTypeList, NewPossible) :-
+        member([TypeA, AttribA], TypeList),
+        member([TypeB, AttribB], TypeList),
+        subtractTypes(AttribA, AttribB, [], NewTypeAttribs),
+        \+ member([_, NewTypeAttribs], TypeList),
+        name(TypeCount, CountString),         % generate name and add to type list
+        atom_codes(Count, CountString),
+        atom_concat(type,Count,NewTypeName),
+        NewTypeCount is TypeCount + 1,        % increment generated name counter
+        addTypeByParts(TypeList, NewTypeName, NewTypeAttribs, Possible, NewTypeList, NewPossible).
+
+subtractTypes([X | AttribA], AttribB, NewType, NewType2) :-
+        (member(X, AttribB)
+        -> subtractTypes(AttribA, AttribB, NewType, NewType2)
+        ; subtractTypes(AttribA, AttribB, [X | NewType], NewType2)).
+
+subtractTypes([], _, NewType, NewType2) :- NewType2 = NewType.
+
+% break up a type into a list of types, one attribute each 
+
+breakType(Type, AddedTypesList, TypeList, TypeCount, Possible, NewTypeList, NewTypeCount, NewPossible) :-
+	member([Type, Attrib], TypeList),
+	breakAttribList(Attrib, [], AddedTypesList, TypeList, TypeCount, Possible, NewTypeList, NewTypeCount, NewPossible).
+
+breakAttribList([], TempList, ListOfNewTypes, TypeList, TypeCount, Possible, FinalTypeList, FinalTypeCount, FinalPossible) :-
+	reverse(TempList, ListOfNewTypes),
+	FinalTypeList = TypeList,
+	FinalTypeCount = TypeCount,
+	FinalPossible = Possible.
+
+breakAttribList([Head | Rest], TempList, AddedTypesList, TypeList, TypeCount, Possible, FinalTypeList, FinalTypeCount, FinalPossible) :-
+	% need to check if new generated type already exists with a different name
+	member([ExistingType, [Head]], TypeList), 
+	breakAttribList(Rest, [ExistingType | TempList], AddedTypesList, TypeList, TypeCount, Possible, FinalTypeList, FinalTypeCount, FinalPossible). 
+
+breakAttribList([Head | Rest], TempList, AddedTypesList, TypeList, TypeCount, Possible, FinalTypeList, FinalTypeCount, FinalPossible) :-
+	\+  member([_, [Head]], TypeList), 
+	% need to generate new type names
+	% add types by parts here and just return list of names
+        name(TypeCount, CountString),           % generate name and add to type list
+        atom_codes(Count, CountString),
+        atom_concat(type, Count, NewTypeName),
+        NewTypeCount is TypeCount + 1,          % increment generated name counter
+	addTypeByParts(TypeList, NewTypeName, [Head], Possible, TempTypeList, NewPossible),
+	breakAttribList(Rest, [NewTypeName | TempList], AddedTypesList, TempTypeList, NewTypeCount, NewPossible, FinalTypeList, FinalTypeCount, FinalPossible). 
+
+% Test if and track when a variable of a type has been used with a 
+% particular formula during rule applications.
+
+addUsedFormulaVar(Formula, TypeName, VarName, UsedFormulaVarList, NewUsedFormulaVarList) :-
+        \+ member([Formula, _], UsedFormulaVarList),
+        (emptyList(UsedFormulaVarList) -> NewUsedFormulaVarList = [[Formula, [var(VarName, TypeName)]]]
+        ; append(UsedFormulaVarList, [[Formula, [var(VarName,TypeName)]]], NewUsedFormulaVarList)).
+
+% useVarOfType informs the prover that a variable of a type has been used
+% in a formula and that it is now an "existing" variable to use when 
+% applying rules.
+
+useVarOfType(TypeName, VarName, Available, Possible, NewAvailable, NewPossible) :-
+        member([TypeName, TypePossible], Possible),
+        member(VarName, TypePossible),
+        addAvailable(TypeName, VarName, Available, NewAvailable),
+        remove(VarName, TypePossible, TempPossible),
+        replace([TypeName, TypePossible], [TypeName, TempPossible], Possible, NewPossible).
+
+addAvailable(TypeName, VarName, [], NewAvailable) :-         % need to start new available list
+        NewAvailable = [[TypeName, [VarName]]].
+
+addAvailable(TypeName, VarName, Available, NewAvailable) :-  % existing available list for type
+        member([TypeName, TypeAvailable], Available),
+        TempAvailable = [VarName | TypeAvailable],
+        replace([TypeName, TypeAvailable], [TypeName, TempAvailable], Available, NewAvailable).
+
+addAvailable(TypeName, VarName, Available, NewAvailable) :-  % no existing available list for type
+        NewAvailable = [[TypeName, [VarName]] | Available].
+
+getFirstPossibleVar(TypeName, Available, Possible, NewAvailable, NewPossible, VarName) :-
+        member([TypeName, TypePossible], Possible),          % if a type is added, it has a possible list
+        head(TypePossible, VarName),                         
+        useVarOfType(TypeName, VarName, Available, Possible, NewAvailable, NewPossible).
+
+getFirstAvailableVar(TypeName, Formula, Available, UsedFormulaVarList, VarName) :-
+        member_by_index(TypeName, Available, TypeAvailable),
+        member_or_empty(Formula, UsedFormulaVarList, FormulaUsedList),
+        getAvailableVar(TypeAvailable, FormulaUsedList, TypeName, VarName).
+
+getAvailableVar([], _, _, _).
+getAvailableVar([Head | _], FormulaUsedList, TypeName, Var) :-
+        \+ member(var(Head, TypeName), FormulaUsedList),
+        Var = Head.
+getAvailableVar([_ | TailAvailableList], FormulaUsedList, TypeName, Var) :-
+        getAvailableVar(TailAvailableList, FormulaUsedList, TypeName, Var).
+
+% Place an initial variable in the Available list, if option 
+% useInitialAvailable is enabled.
+
+populateInitialAvailable(TypeName, Available, NewAvailable) :-
+	(useInitialAvailable 
+	-> addAvailable(TypeName, z, Available, NewAvailable) 
+	; NewAvailable = Available).
+
+% Replace variable of a type with the same variable name and a list of 
+% types. 
+
+replaceVar([rel(P, [ReplaceVar]) | Rest], ReplaceVar, ReplaceWith, NewTableau) :-
+	replaceVar(Rest, ReplaceVar, ReplaceWith, NewTableau),
+	NewTableau = [rel(P, ReplaceWith) | Rest].
+
+replaceVar([Head | Rest], ReplaceVar, ReplaceWith, NewTableau) :-
+        replaceVar(Head, ReplaceVar, ReplaceWith, NewTableau),
+        replaceVar(Rest, ReplaceVar, ReplaceWith, NewTableau),
+        NewTableau = [Head | Rest].
+
+replaceVar([], _, _, _).
+
+/****************************************************************************
+ Misc predicates, basic list functions 
+
+ Some normal list operations are imported from XSB basics library:
+ member, append, reverse
+*****************************************************************************/
+
+emptyList([]).
+
+head([Head | _], Head).
+
+% member_by_index/3
+% predicate to return items from lists of lists where first item
+% in sublist is a key to the second. Included to improve readability.
+member_by_index(Index, List, Result) :-
+        member([Index, Result], List).
+
+% member_or_empty/3
+% similar to member_by_index but returns an empty list if a Result
+% is not found in the list. Used for cases when the lack of a result
+% just indicates that the key hasn't been used yet and computation
+% can continue with an empty list.
+member_or_empty(Index, List, Result) :-
+        member([Index, Result], List).
+member_or_empty(_, _, []).
+
+/* remove(Item, List, Newlist) :-
+   Newlist is the result of removing all occurrences of
+   Item from List.
+
+   remove is split into 2 predicates, remove and remove2 to avoid
+   incorrect results when tabling is used.
+*/
+
+remove(Item, List, NewList) :-
+        remove2(Item, List, [], NewList), !.
+
+remove2(_, [], TempList, NewList) :-
+        NewList = TempList.
+
+remove2(Item, [Item | Tail], TempList, NewList) :-
+        remove2(Item, Tail, TempList, NewList).
+
+remove2(Item, [Head | Tail], TempList, NewList) :-
+        append(TempList, [Head], NewTempList),
+        remove2(Item, Tail, NewTempList, NewList).
+
+% Replace an item in a list with another 
+replace(_,_,[],[]).
+replace(HReplacant1,HReplacer,[HReplacant2|Tail],[HReplacer|NewTail]):-
+        HReplacant1 == HReplacant2,
+        replace(HReplacant1,HReplacer,Tail,NewTail).
+replace(HReplacant,HReplacer,[Head|Tail],[Head|NewTail]):-
+        replace(HReplacant,HReplacer,Tail,NewTail).
+
+
+/* Tableau storage and display predicates 
+
+   The prover stores the entire tableau until the expand_and_close 
+   predicate completes and then displays it on the screen. It is 
+   stored until the end to allow branches to be attempted which 
+   may fail without any output to the screen that an incorrect 
+   branch was attempted (writing directly to the screen while the
+   theorem prover is working would not allow this).
+*/
+
+printTableau([]).
+printTableau([Head | Rest]) :-
+	printTableau(Rest),
+	write(Head),nl.
+
+
+addToTableau(Line) :-
+        storage_find_keypair(reldt, tableau, T),
+        storage_delete_keypair_bt(reldt, tableau, _),
+        append(T, [Line], NewCompleteTableau),
+        storage_insert_keypair_bt(reldt, tableau, NewCompleteTableau, _).
+

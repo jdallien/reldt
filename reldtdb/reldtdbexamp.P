@@ -1,0 +1,99 @@
+/* RelDT-DB: Database Relational Dual Tableaux Theorem Prover Examples
+   Last Updated: July 21, 2005
+
+  All of these examples can be found in (page numbers noted 
+  above each example):
+  Wendy MacCaull and Ewa Orlowska, "A logic of typed relations 
+  and its applications to relational databases", available on 
+  the RelDT website: http://logic.stfx.ca/reldt/
+*/
+
+
+% from p.20
+ex(1) :-
+getTypeList(TypeList),
+addTypeByParts(TypeList, a, [name, age], [], NewTypeList, NewPossible),
+addTypeByParts(NewTypeList, b, [age], NewPossible, NewTypeList2, NewPossible2),
+TypeCount = 2,
+Formula = rel(r -> (proj(a,b,r)) prod one, [var(u, a)]),
+addAvailable(a,u,[], Available),
+reldtdb(Formula, TypeCount, NewTypeList2, NewPossible2, Available).
+
+
+% from p.20
+ex(2) :- 
+getTypeList(TypeList),
+addTypeByParts(TypeList, a, [name, age], [], NewTypeList, Possible),
+addTypeByParts(NewTypeList, b, [age], Possible, NewTypeList2, NewPossible),
+TypeCount = 2,
+Formula = rel((proj(a,b,r)) -> ((proj(a,b,r uni s))), [var(u,b)]), 
+addAvailable(b,u,[], Available),
+reldtdb(Formula, TypeCount, NewTypeList2, NewPossible, Available).
+
+
+% needs useInitialAvailable option to be enabled
+% from p.21
+ex(3) :- 
+getTypeList(TypeList),
+addTypeByParts(TypeList, a, [name, age], [], NewTypeList, Possible),
+addTypeByParts(NewTypeList, b, [age], Possible, NewTypeList2, NewPossible),
+TypeCount = 2,
+Formula = rel(one -> proj(a, b, one), [var(u,b)]),
+addAvailable(b,u,[], Available),
+reldtdb(Formula, TypeCount, NewTypeList2, NewPossible, Available).
+
+
+% from p.21
+ex(4) :-
+getTypeList(TypeList),
+addTypeByParts(TypeList, a, [name, age], [], NewTypeList, Possible),
+addTypeByParts(NewTypeList, b, [id], Possible, NewTypeList2, NewPossible),
+addTypeByParts(NewTypeList2, c, [name, age, id], NewPossible, NewTypeList3, NewPossible2),
+TypeCount = 3,
+Formula = rel(proj(c, a, r prod s) -> r, [var(u,a)]),
+addAvailable(a,u,[], Available),
+reldtdb(Formula, TypeCount, NewTypeList3, NewPossible2, Available).
+
+
+% 4(c) from p.21
+ex(5) :- 
+getTypeList(TypeList),
+addTypeByParts(TypeList, a, [name, age], [], NewTypeList, Possible),
+TypeCount = 1,
+Formula = rel(zero -> (r inter s), [var(u,a)]),
+addAvailable(a,u,[], Available),
+reldtdb(Formula, TypeCount, NewTypeList, Possible, Available).
+
+
+% 4(d) from p.21
+ex(6) :-
+getTypeList(TypeList),
+addTypeByParts(TypeList, a, [name, age], [], NewTypeList, Possible),
+addTypeByParts(NewTypeList, b, [age], Possible, NewTypeList2, NewPossible),
+TypeCount = 2,
+Formula = rel(oneempty prod r -> r, [var(u,a)]),
+addAvailable(a,u,[], Available),
+reldtdb(Formula, TypeCount, NewTypeList2, NewPossible, Available).
+
+
+% 4(e) from p.21
+ex(7) :-
+getTypeList(TypeList),
+addTypeByParts(TypeList, c, [name, age], [], NewTypeList, Possible),
+addTypeByParts(NewTypeList, a, [age], Possible, NewTypeList2, NewPossible),
+addTypeByParts(NewTypeList2, b, [name], NewPossible, NewTypeList3, NewPossible2),
+TypeCount = 3,
+Formula = rel(r prod s -> s prod r, [var(u,c)]), 
+addAvailable(c,u,[], Available),
+reldtdb(Formula, TypeCount, NewTypeList3, NewPossible2, Available).
+
+
+% 4(b) from p.21
+ex(8) :-
+getTypeList(TypeList),
+addTypeByParts(TypeList, a, [name, age], [], NewTypeList, Possible),
+TypeCount = 1,
+Formula = rel(proj(a,empty,r) -> oneempty, [var(e,empty)]),
+addAvailable(e,empty,[], Available),
+reldtdb(Formula, TypeCount, NewTypeList, Possible, Available).
+
